@@ -1,5 +1,7 @@
 package com.workmotion.employeemanagementsystem;
 
+import java.util.Optional;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -14,9 +16,8 @@ public class EmployeeServiceImpl implements EmployeeService{
 	}
 
 	@Override
-	public Employee findById(Long id) {
-		// TODO Auto-generated method stub
-		return employeeRepository.findById(id).get();
+	public Optional<Employee> findById(Long id) {
+		return employeeRepository.findById(id);
 	}
 	
 }
