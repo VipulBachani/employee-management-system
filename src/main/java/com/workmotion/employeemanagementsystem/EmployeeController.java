@@ -35,6 +35,9 @@ public class EmployeeController {
 	
 	@PostMapping(path = "/", consumes = "application/json", produces = "application/json")
 	public ResponseEntity<Object> addEmployee(@RequestBody Employee employee) {
+		if((null==employee.getName())||(employee.getName().isBlank())) {
+			return new ResponseEntity<>("Please provide employee name", HttpStatus.BAD_REQUEST);
+		}
 		employee.setState(STATE.ADDED.toString());
 		Employee empDB = employeeService.save(employee);
 		Set<String> completedStates=new HashSet<>();
