@@ -7,7 +7,6 @@ import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.Transient;
 
-
 @Entity
 public class Employee {
 	@Id
@@ -20,16 +19,9 @@ public class Employee {
     @Column(name="STATE")
     private String state;
     
-    @Column(name="SECURITY_CHECK_FINISHED")
-    private boolean securityCheck;
-    
-    @Column(name="WORK_PERMIT_CHECK_FINISHED")
-    private boolean workPermitCheck;
-    
     @Transient
-    private String substate;
+    private String substate;  
     
-
 	public String getSubstate() {
 		return substate;
 	}
@@ -61,24 +53,4 @@ public class Employee {
 	public void setState(String state) {
 		this.state = state;
 	}
-
-	public boolean isSecurityCheck() {
-		return securityCheck;
-	}
-
-	public void setSecurityCheck(boolean securityCheck) {
-		this.securityCheck = securityCheck;
-	}
-
-	public boolean isWorkPermitCheck() {
-		return workPermitCheck;
-	}
-
-	public void setWorkPermitCheck(boolean workPermitCheck) {
-		this.workPermitCheck = workPermitCheck;
-	}
-
-	
-	
-
 }

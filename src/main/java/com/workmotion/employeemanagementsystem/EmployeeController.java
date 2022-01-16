@@ -1,7 +1,10 @@
 package com.workmotion.employeemanagementsystem;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,14 +26,20 @@ public class EmployeeController {
 	
 	@Value("#{${states}}")
 	private Map<String, String> states;
-	
+
 	@Value("#{${substates}}")
 	private Map<String, String> substates;
+
+	//can be replaced by memcache or redis
+	private Map<Long, Set<String>> statesBucket=new HashMap<>();
 	
 	@PostMapping(path = "/", consumes = "application/json", produces = "application/json")
 	public ResponseEntity<Object> addEmployee(@RequestBody Employee employee) {
-		employee.setState("ADDED");
-		employeeService.save(employee);
+		employee.setState(STATE.ADDED.toString());
+		Employee empDB = employeeService.save(employee);
+		Set<String> completedStates=new HashSet<>();
+		completedStates.add(STATE.ADDED.toString());
+		statesBucket.put(empDB.getId(), completedStates);
 		return new ResponseEntity<>(employee, HttpStatus.OK);
 	}
 	
@@ -43,66 +52,78 @@ public class EmployeeController {
 			empDB=optional.get();
 		}else {
 			return new ResponseEntity<>("Invalid Employee ID", HttpStatus.BAD_REQUEST);
+		}		
+		String requestedState=employee.getState();
+		String requestedSubstate=employee.getSubstate();
+		
+		if((null==requestedState)&&(null==requestedSubstate)) {
+			return new ResponseEntity<>("Please provide either state or substate in the request", HttpStatus.BAD_REQUEST);
 		}
-		
-		String currState = empDB.getState();
-		String newState=employee.getState();
-		String newSubstate=employee.getSubstate();
-		ResponseEntity<Object> responseEntity=null;
-		
-		//Validation
-		if((null==newState)&&(null==newSubstate)) {
-			return new ResponseEntity<>("No State or Substate Provided", HttpStatus.BAD_REQUEST);
+		if((null!=requestedState)&&(null!=requestedSubstate)) {
+			return new ResponseEntity<>("Please provide either state or substate in the request, not both", HttpStatus.BAD_REQUEST);
 		}
-		
-		
-		if ((null==newState)||(newState.isEmpty())) {
-			responseEntity = new ResponseEntity<>("No State Provided", HttpStatus.BAD_REQUEST);
-		} else if(!newState.equalsIgnoreCase(states.get(currState))) {
-			return new ResponseEntity<>("Invalid State Transition", HttpStatus.BAD_REQUEST);
-		} else if (newState.equalsIgnoreCase(STATE.INCHECK.toString())) {
-			empDB.setState(STATE.INCHECK.toString());
-			empDB.setSecurityCheck(false);
-			empDB.setWorkPermitCheck(false);
-			employeeService.save(empDB);
-			responseEntity = new ResponseEntity<>("State Succcesfully Updated", HttpStatus.OK);
-		} else if (newState.equalsIgnoreCase(STATE.ACTIVE.toString())) {
-			if(!empDB.isSecurityCheck()||!empDB.isWorkPermitCheck()) {
-				return new ResponseEntity<>("Invalid State Transition", HttpStatus.BAD_REQUEST);
+		Set<String> statesCompleted = statesBucket.get(employee.getId());
+		if(requestedState!=null) {
+			
+			if(empDB.getState().equalsIgnoreCase(requestedState)) {
+				return new ResponseEntity<>("Employee's current state is already "+requestedState, HttpStatus.BAD_REQUEST);
 			}
-			empDB.setState(STATE.ACTIVE.toString());
-			employeeService.save(empDB);
-			responseEntity = new ResponseEntity<>("State Succcesfully Updated", HttpStatus.OK);
-		}
-		if(responseEntity.getStatusCode().equals(HttpStatus.OK)) {
-			return responseEntity;
-		}
-		
-		if((null==newSubstate)|| newSubstate.isEmpty())
-		{
-			responseEntity = new ResponseEntity<>("No substate provided", HttpStatus.BAD_REQUEST);
-		} else if(currState.equalsIgnoreCase(STATE.INCHECK.toString())) {
-			if(newSubstate.equalsIgnoreCase(SUBSTATE.SECURITY_CHECK_FINISHED.toString())) {
-				empDB.setSecurityCheck(true);
-				if(empDB.isWorkPermitCheck()) 
-					empDB.setState(STATE.APPROVED.toString());
-				employeeService.save(empDB);
-				responseEntity = new ResponseEntity<>("Substate Succcesfully Updated", HttpStatus.OK);
-			}else if(newSubstate.equalsIgnoreCase(SUBSTATE.WORK_PERMIT_CHECK_FINISHED.toString())) {
-				empDB.setWorkPermitCheck(true);
-				if(empDB.isSecurityCheck()) 
-					empDB.setState(STATE.APPROVED.toString());
-				employeeService.save(empDB);
-				responseEntity = new ResponseEntity<>("Substate Succcesfully Updated", HttpStatus.OK);
+			if(statesCompleted.contains(requestedState)) {
+				return new ResponseEntity<>("State Already Completed", HttpStatus.BAD_REQUEST);
+			}
+			
+			if(!states.containsKey(requestedState)) {
+				return new ResponseEntity<>("Invalid Target State Requested", HttpStatus.BAD_REQUEST);
 			}else {
-				responseEntity = new ResponseEntity<>("Invalid Substate Transition", HttpStatus.BAD_REQUEST);
+				if(!statesCompleted.contains(states.get(requestedState))){
+					return new ResponseEntity<>(states.get(requestedState)+" state needs to be completed before this target state", HttpStatus.BAD_REQUEST);
+				}else {					
+					if(requestedState.equalsIgnoreCase(STATE.INCHECK.toString())) {
+						statesCompleted.add(SUBSTATE.SECURITY_CHECK_STARTED.toString());
+						statesCompleted.add(SUBSTATE.WORK_PERMIT_CHECK_STARTED.toString());
+						statesBucket.put(employee.getId(), statesCompleted);
+					}else if(requestedState.equalsIgnoreCase(STATE.ACTIVE.toString())) {
+						statesBucket.remove(employee.getId());
+					}
+					empDB.setState(requestedState);
+					employeeService.save(empDB);			  
+				}
 			}
-		} else {
-			responseEntity = new ResponseEntity<>("Invalid substate transition", HttpStatus.BAD_REQUEST);
-		}
-		return responseEntity;
+			
+		}else {
+			if(statesCompleted.contains(requestedSubstate)) {
+				return new ResponseEntity<>("Substate Already Completed", HttpStatus.BAD_REQUEST);
+			}
+			
+			if(!substates.containsKey(requestedSubstate)) {
+				return new ResponseEntity<>("Invalid Target Substate Requested", HttpStatus.BAD_REQUEST);
+			}else {
+				if(!statesCompleted.contains(substates.get(requestedSubstate))) {
+					return new ResponseEntity<>(substates.get(requestedSubstate)+" substate needs to be completed before this target substate", HttpStatus.BAD_REQUEST);
+				}else {
+					if(requestedSubstate.equalsIgnoreCase(SUBSTATE.SECURITY_CHECK_FINISHED.toString())) {
+						statesCompleted.add(SUBSTATE.SECURITY_CHECK_FINISHED.toString());
+						statesBucket.put(employee.getId(), statesCompleted);
+						if(statesCompleted.contains(SUBSTATE.WORK_PERMIT_CHECK_FINISHED.toString())) {
+							statesCompleted.add(STATE.APPROVED.toString());
+							empDB.setState(STATE.APPROVED.toString());
+							employeeService.save(empDB);
+						}
+					}else if(requestedSubstate.equalsIgnoreCase(SUBSTATE.WORK_PERMIT_CHECK_FINISHED.toString())) {
+						statesCompleted.add(SUBSTATE.WORK_PERMIT_CHECK_FINISHED.toString());
+						statesBucket.put(employee.getId(), statesCompleted);
+						if(statesCompleted.contains(SUBSTATE.SECURITY_CHECK_FINISHED.toString())) {
+							empDB.setState(STATE.APPROVED.toString());
+							statesCompleted.add(STATE.APPROVED.toString());
+							employeeService.save(empDB);
+						}
+					}
+				}
+			}
+		}				
+		return new ResponseEntity<>("Successful State Transition", HttpStatus.OK);
 	}
-	
+
 	@GetMapping(value = "/{id}")
 	public ResponseEntity<Object> getEmployee(@PathVariable Long id) {
 		Optional<Employee> optional = employeeService.findById(id);
