@@ -7,6 +7,8 @@ import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.Transient;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 @Entity
 public class Employee {
 	@Id
@@ -19,6 +21,7 @@ public class Employee {
     @Column(name="STATE")
     private String state;
     
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Transient
     private String substate;  
     
